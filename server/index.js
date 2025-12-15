@@ -9,7 +9,8 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../client")));
- app.get("*", (req, res) => {
+
+app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../client/index.html"));
 });
 
@@ -39,12 +40,8 @@ io.on("connection", (socket) => {
   }
 
   socket.on("message", msg => {
-    if (socket.partner) socket.partner.emit("message", msg);
+    socket.partner?.emit("message", msg);
   });
-
-  socket.on("offer", d => socket.partner?.emit("offer", d));
-  socket.on("answer", d => socket.partner?.emit("answer", d));
-  socket.on("ice-candidate", d => socket.partner?.emit("ice-candidate", d));
 
   socket.on("next", () => {
     if (socket.partner) {
@@ -56,22 +53,14 @@ io.on("connection", (socket) => {
     socket.emit("waiting");
   });
 
-  socket.on("report", () => {
-    console.log("⚠️ User reported");
-  });
-
   socket.on("disconnect", () => {
     onlineUsers--;
     io.emit("online", onlineUsers);
-
-    if (socket.partner) socket.partner.emit("partner_left");
     if (waitingUser === socket) waitingUser = null;
   });
 });
 
-server.listen(5000, () => {
-  console.log("SERVER CHAL GAYA");
-});
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("SERVER CHAL GAYA on port", PORT);
 });
