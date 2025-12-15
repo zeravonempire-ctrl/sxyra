@@ -3,66 +3,53 @@
 <head>
   <title>Sxyra</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <style>
-    body { margin:0; font-family:Arial; background:#f4f4f4; }
-    #landing {
-      height:100vh; display:flex; flex-direction:column;
-      justify-content:center; align-items:center;
-      background:linear-gradient(135deg,#6a7cff,#8e6bdc);
-      color:white; text-align:center;
-    }
-    #app { display:none; height:100vh; }
-    #top {
-      background:#fff; padding:10px;
-      display:flex; justify-content:space-between;
-      border-bottom:1px solid #ddd;
-    }
-    #main { display:flex; height:calc(100vh - 50px); }
-    #videos { width:50%; background:black; display:none; flex-direction:column; }
-    video { width:100%; height:50%; object-fit:cover; }
-    #chatArea { width:50%; display:flex; flex-direction:column; background:#e5ddd5; }
-    #chat { flex:1; padding:10px; overflow-y:auto; }
-    .msg { max-width:70%; padding:8px 12px; border-radius:10px; margin:6px 0; }
-    .me { background:#dcf8c6; margin-left:auto; }
-    .other { background:white; }
-    #controls { display:flex; padding:8px; gap:5px; background:#fff; }
-    input { flex:1; padding:8px; }
-    button { padding:8px 12px; cursor:pointer; }
+    body{margin:0;font-family:Arial;background:#f4f4f4}
+    #landing{height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;
+      background:linear-gradient(135deg,#6a7cff,#8e6bdc);color:white}
+    #app{display:none;height:100vh}
+    #top{padding:10px;background:white;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
+    #main{display:flex;height:calc(100vh - 50px)}
+    #videos{width:50%;background:black;display:none;flex-direction:column}
+    video{width:100%;height:50%;object-fit:cover}
+    #chatArea{width:50%;display:flex;flex-direction:column;background:#e5ddd5}
+    #chat{flex:1;padding:10px;overflow-y:auto}
+    .msg{max-width:70%;padding:8px 12px;border-radius:10px;margin:6px 0}
+    .me{background:#dcf8c6;margin-left:auto}
+    .other{background:white}
+    #controls{display:flex;gap:5px;padding:8px;background:white}
+    input{flex:1;padding:8px}
+    button{padding:8px 12px}
   </style>
 </head>
 
 <body>
 
-<!-- LANDING -->
 <div id="landing">
   <h1>Sxyra</h1>
-  <p>Talk to strangers</p>
-  <button onclick="startApp('text')">Text Chat</button>
-  <button onclick="startApp('video')">Video Chat</button>
-  <p id="onlineLanding">Online: 0</p>
+  <button onclick="start('text')">Text Chat</button>
+  <button onclick="start('video')">Video Chat</button>
+  <p id="online">Online: 0</p>
 </div>
 
-<!-- APP -->
 <div id="app">
   <div id="top">
     <b>Sxyra</b>
     <span id="status">Connecting...</span>
-    <button onclick="stop()">Stop</button>
+    <button onclick="next()">Next</button>
   </div>
 
   <div id="main">
     <div id="videos">
-      <video id="localVideo" autoplay muted playsinline></video>
-      <video id="remoteVideo" autoplay playsinline></video>
+      <video id="local" autoplay muted playsinline></video>
+      <video id="remote" autoplay playsinline></video>
     </div>
 
     <div id="chatArea">
       <div id="chat"></div>
       <div id="controls">
-        <input id="msg" placeholder="Type message" />
+        <input id="msg" placeholder="Type message">
         <button onclick="send()">Send</button>
-        <button onclick="next()">Next</button>
       </div>
     </div>
   </div>
@@ -70,105 +57,103 @@
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-  const socket = io("https://sxyra-server.onrender.com");
+const socket = io("https://sxyra-server.onrender.com");
 
-  const landing = document.getElementById("landing");
-  const app = document.getElementById("app");
-  const videos = document.getElementById("videos");
-  const chat = document.getElementById("chat");
-  const msg = document.getElementById("msg");
-  const status = document.getElementById("status");
-  const onlineLanding = document.getElementById("onlineLanding");
-  const localVideo = document.getElementById("localVideo");
-  const remoteVideo = document.getElementById("remoteVideo");
+const landing=document.getElementById("landing");
+const app=document.getElementById("app");
+const videos=document.getElementById("videos");
+const chat=document.getElementById("chat");
+const msg=document.getElementById("msg");
+const status=document.getElementById("status");
+const online=document.getElementById("online");
+const localV=document.getElementById("local");
+const remoteV=document.getElementById("remote");
 
-  let mode = "text";
-  let pc;
-  let localStream;
+let mode="text", pc=null, stream=null;
 
-  const iceConfig = { iceServers:[{ urls:"stun:stun.l.google.com:19302" }] };
+const ice={iceServers:[
+  {urls:"stun:stun.l.google.com:19302"},
+  {urls:"stun:global.stun.twilio.com:3478"}
+]};
 
-  socket.on("online", n => onlineLanding.innerText = "Online: " + n);
-  socket.on("waiting", () => status.innerText = "Waiting for stranger...");
-  socket.on("partner_left", () => { chat.innerHTML=""; status.innerText="Finding new..."; });
+socket.on("online",n=>online.innerText="Online: "+n);
+socket.on("waiting",()=>status.innerText="Waiting...");
+socket.on("partner_left",reset);
 
-  socket.on("matched", async ({ initiator }) => {
-    status.innerText = "Connected";
-
-    if (mode === "video") {
-      await startCamera();
-      createPeer();
-
-      if (initiator) {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit("offer", offer);
-      }
+socket.on("matched",async({initiator})=>{
+  status.innerText="Connected";
+  if(mode==="video"){
+    await startCam();
+    createPeer();
+    if(initiator){
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("offer",offer);
     }
-  });
-
-  socket.on("offer", async offer => {
-    await pc.setRemoteDescription(offer);
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-    socket.emit("answer", ans);
-  });
-
-  socket.on("answer", ans => pc.setRemoteDescription(ans));
-
-  socket.on("ice-candidate", async c => {
-    try { await pc.addIceCandidate(c); } catch {}
-  });
-
-  socket.on("message", m => {
-    const d=document.createElement("div");
-    d.className="msg other";
-    d.innerText=m;
-    chat.appendChild(d);
-    chat.scrollTop=chat.scrollHeight;
-  });
-
-  function startApp(m){
-    mode=m;
-    landing.style.display="none";
-    app.style.display="block";
-    if(mode==="video") videos.style.display="flex";
   }
+});
 
-  function stop(){ location.reload(); }
+socket.on("offer",async o=>{
+  await pc.setRemoteDescription(o);
+  const ans=await pc.createAnswer();
+  await pc.setLocalDescription(ans);
+  socket.emit("answer",ans);
+});
 
-  async function startCamera(){
-    if(localStream) return;
-    localStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-    localVideo.srcObject = localStream;
-  }
+socket.on("answer",a=>pc.setRemoteDescription(a));
+socket.on("ice-candidate",c=>pc.addIceCandidate(c));
+socket.on("message",m=>addMsg(m,false));
 
-  function createPeer(){
-    pc = new RTCPeerConnection(iceConfig);
-    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
-    pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
-    pc.onicecandidate = e => e.candidate && socket.emit("ice-candidate", e.candidate);
-  }
+function start(m){
+  mode=m;
+  landing.style.display="none";
+  app.style.display="block";
+  if(m==="video") videos.style.display="flex";
+}
 
-  function send(){
-    if(!msg.value.trim()) return;
-    const d=document.createElement("div");
-    d.className="msg me";
-    d.innerText=msg.value;
-    chat.appendChild(d);
-    socket.emit("message", msg.value);
-    msg.value="";
-  }
+function addMsg(t,me){
+  const d=document.createElement("div");
+  d.className="msg "+(me?"me":"other");
+  d.innerText=t;
+  chat.appendChild(d);
+  chat.scrollTop=chat.scrollHeight;
+}
 
-  function next(){
-    chat.innerHTML="";
-    socket.emit("next");
-  }
+function send(){
+  if(!msg.value.trim())return;
+  addMsg(msg.value,true);
+  socket.emit("message",msg.value);
+  msg.value="";
+}
 
-  msg.addEventListener("keydown", e => {
-    if(e.key==="Enter") send();
-  });
+async function startCam(){
+  if(stream)return;
+  stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+  localV.srcObject=stream;
+}
+
+function createPeer(){
+  pc=new RTCPeerConnection(ice);
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  pc.ontrack=e=>remoteV.srcObject=e.streams[0];
+  pc.onicecandidate=e=>e.candidate&&socket.emit("ice-candidate",e.candidate);
+}
+
+function reset(){
+  if(pc){pc.close();pc=null;}
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  localV.srcObject=null;
+  remoteV.srcObject=null;
+  chat.innerHTML="";
+  status.innerText="Finding new...";
+}
+
+function next(){
+  reset();
+  socket.emit("next");
+}
+
+msg.addEventListener("keydown",e=>e.key==="Enter"&&send());
 </script>
-
 </body>
 </html>

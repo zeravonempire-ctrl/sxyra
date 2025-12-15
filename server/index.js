@@ -1,7 +1,7 @@
 const express = require("express");
 const path = require("path");
-const cors = require("cors");
 const http = require("http");
+const cors = require("cors");
 
 const app = express();
 const server = http.createServer(app);
@@ -18,30 +18,33 @@ const io = require("socket.io")(server, {
   cors: { origin: "*" }
 });
 
-let waitingUser = null;
-let onlineUsers = 0;
+let waitingSocket = null;
+let online = 0;
 
-io.on("connection", (socket) => {
-  onlineUsers++;
-  io.emit("online", onlineUsers);
-  console.log("User connected");
+io.on("connection", socket => {
+  online++;
+  io.emit("online", online);
+  console.log("Connected:", socket.id);
 
-  if (waitingUser) {
-    socket.partner = waitingUser;
-    waitingUser.partner = socket;
+  if (waitingSocket && waitingSocket.connected && waitingSocket !== socket) {
+    socket.partner = waitingSocket;
+    waitingSocket.partner = socket;
 
     socket.emit("matched", { initiator: true });
-    waitingUser.emit("matched", { initiator: false });
+    waitingSocket.emit("matched", { initiator: false });
 
-    waitingUser = null;
+    waitingSocket = null;
   } else {
-    waitingUser = socket;
+    waitingSocket = socket;
     socket.emit("waiting");
   }
 
-  socket.on("message", msg => {
-    socket.partner?.emit("message", msg);
-  });
+  socket.on("message", msg => socket.partner?.emit("message", msg));
+  socket.on("typing", () => socket.partner?.emit("typing"));
+
+  socket.on("offer", d => socket.partner?.emit("offer", d));
+  socket.on("answer", d => socket.partner?.emit("answer", d));
+  socket.on("ice-candidate", d => socket.partner?.emit("ice-candidate", d));
 
   socket.on("next", () => {
     if (socket.partner) {
@@ -49,18 +52,20 @@ io.on("connection", (socket) => {
       socket.partner.partner = null;
       socket.partner = null;
     }
-    waitingUser = socket;
+    if (waitingSocket === socket) waitingSocket = null;
+    waitingSocket = socket;
     socket.emit("waiting");
   });
 
   socket.on("disconnect", () => {
-    onlineUsers--;
-    io.emit("online", onlineUsers);
-    if (waitingUser === socket) waitingUser = null;
+    online--;
+    io.emit("online", online);
+    if (waitingSocket === socket) waitingSocket = null;
+    if (socket.partner) socket.partner.emit("partner_left");
   });
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log("SERVER CHAL GAYA on port", PORT);
+  console.log("SERVER CHAL GAYA on", PORT);
 });
