@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sxyra</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+    }
+
+    /* ---------- LANDING ---------- */
+    #landing {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg,#6a7cff,#8e6bdc);
+      color: white;
+      text-align: center;
+      flex-direction: column;
+    }
+
+    #landing h1 { font-size: 52px; margin: 0; }
+    #landing p { opacity: 0.9; margin: 8px 0 20px; }
+
+    .landing-btns button {
+      padding: 12px 26px;
+      margin: 6px;
+      font-size: 16px;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+    }
+
+    .landing-btns button:first-child { background: white; }
+    .landing-btns button:last-child { background: #000; color: white; }
+
+    #onlineLanding {
+      margin-top: 20px;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    /* ---------- APP ---------- */
+    #app {
+      display: none;
+      height: 100vh;
+    }
+
+    #top {
+      background: white;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #main {
+      display: flex;
+      height: calc(100vh - 60px);
+    }
+
+    /* ---------- VIDEOS ---------- */
+    #videos {
+      width: 50%;
+      background: black;
+      display: none;
+      flex-direction: column;
+    }
+
+    video {
+      width: 100%;
+      height: 50%;
+      object-fit: cover;
+      cursor: pointer;
+    }
+
+    /* ---------- CHAT ---------- */
+    #chatArea {
+      width: 50%;
+      display: flex;
+      flex-direction: column;
+      background: #e5ddd5;
+    }
+
+    #chat {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    .msg {
+      max-width: 70%;
+      padding: 8px 12px;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      clear: both;
+    }
+
+    .me { background: #dcf8c6; float: right; }
+    .other { background: white; float: left; }
+
+    #typing {
+      font-size: 12px;
+      padding: 4px 10px;
+      color: #555;
+    }
+
+    #controls {
+      display: flex;
+      gap: 5px;
+      padding: 8px;
+      background: white;
+      border-top: 1px solid #ccc;
+    }
+
+    input { flex: 1; padding: 8px; }
+
+    button { padding: 8px 12px; cursor: pointer; }
+
+    #emojiBox span {
+      font-size: 22px;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+
+    @media (max-width: 768px) {
+      #main { flex-direction: column; }
+      #videos, #chatArea { width: 100%; height: 50%; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- LANDING -->
+<div id="landing">
+  <h1>Sxyra</h1>
+  <p>Talk to strangers. Random. Anonymous.</p>
+
+  <div class="landing-btns">
+    <button onclick="startApp('text')">Text Chat</button>
+    <button onclick="startApp('video')">Video Chat</button>
+  </div>
+
+  <div id="onlineLanding">Online users: 0</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="top">
+    <b>Sxyra</b>
+    <span>Online: <b id="onlineApp">0</b></span>
+    <span id="status">Connecting...</span>
+    <button onclick="stop()">Stop</button>
+  </div>
+
+  <div id="main">
+    <!-- VIDEOS -->
+    <div id="videos">
+      <video id="localVideo" autoplay muted playsinline></video>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+
+    <!-- CHAT -->
+    <div id="chatArea">
+      <div id="chat"></div>
+      <div id="typing"></div>
+
+      <div id="controls">
+        <input id="msg" placeholder="Type a message..." />
+        <button onclick="toggleEmoji()">😊</button>
+        <button onclick="send()">Send</button>
+        <button onclick="next()">Next</button>
+      </div>
+
+      <div id="emojiBox" style="display:none;padding:6px;background:#fff;">
+        <span onclick="addEmoji('😀')">😀</span>
+        <span onclick="addEmoji('😂')">😂</span>
+        <span onclick="addEmoji('😍')">😍</span>
+        <span onclick="addEmoji('😎')">😎</span>
+        <span onclick="addEmoji('😭')">😭</span>
+        <span onclick="addEmoji('👍')">👍</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  const socket = io("http://localhost:5000");
+
+  const landing = document.getElementById("landing");
+  const app = document.getElementById("app");
+  const videos = document.getElementById("videos");
+  const chat = document.getElementById("chat");
+  const msgInput = document.getElementById("msg");
+  const typingDiv = document.getElementById("typing");
+  const emojiBox = document.getElementById("emojiBox");
+  const status = document.getElementById("status");
+  const onlineLanding = document.getElementById("onlineLanding");
+  const onlineApp = document.getElementById("onlineApp");
+  const localVideo = document.getElementById("localVideo");
+  const remoteVideo = document.getElementById("remoteVideo");
+
+  let pc, localStream;
+  let mode = "text";
+
+  const config = { iceServers:[{urls:"stun:stun.l.google.com:19302"}] };
+
+  socket.on("online", n => {
+    onlineLanding.innerText = "Online users: " + n;
+    onlineApp.innerText = n;
+  });
+
+  function startApp(m){
+    mode = m;
+    landing.style.display="none";
+    app.style.display="block";
+    if(mode==="video") videos.style.display="flex";
+  }
+
+  function stop(){ location.reload(); }
+
+  [localVideo, remoteVideo].forEach(v=>{
+    v.onclick = ()=>v.requestFullscreen();
+  });
+
+  async function startCamera(){
+    if(localStream) return;
+    localStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    localVideo.srcObject = localStream;
+  }
+
+  function createPeer(){
+    pc = new RTCPeerConnection(config);
+    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+    pc.ontrack = e=>remoteVideo.srcObject=e.streams[0];
+    pc.onicecandidate = e=>e.candidate&&socket.emit("ice-candidate",e.candidate);
+  }
+
+  socket.on("matched", async ({initiator})=>{
+    status.innerText="Connected";
+    if(mode==="video"){
+      await startCamera();
+      createPeer();
+      if(initiator){
+        const offer=await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("offer",offer);
+      }
+    }
+  });
+
+  socket.on("offer", async o=>{
+    await startCamera();
+    createPeer();
+    await pc.setRemoteDescription(o);
+    const ans=await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    socket.emit("answer",ans);
+  });
+
+  socket.on("answer", a=>pc.setRemoteDescription(a));
+  socket.on("ice-candidate", c=>pc.addIceCandidate(c));
+
+  socket.on("message", m=>{
+    chat.innerHTML += `<div class="msg other">${m}</div>`;
+    chat.scrollTop=chat.scrollHeight;
+  });
+
+  socket.on("typing", ()=>{
+    typingDiv.innerText="Stranger is typing...";
+    setTimeout(()=>typingDiv.innerText="",1000);
+  });
+
+  function send(){
+    if(!msgInput.value.trim()) return;
+    chat.innerHTML += `<div class="msg me">${msgInput.value}</div>`;
+    socket.emit("message",msgInput.value);
+    msgInput.value="";
+  }
+
+  function next(){
+    socket.emit("next");
+    chat.innerHTML="";
+  }
+
+  function toggleEmoji(){
+    emojiBox.style.display = emojiBox.style.display==="none"?"block":"none";
+  }
+
+  function addEmoji(e){
+    msgInput.value+=e;
+    msgInput.focus();
+  }
+
+  msgInput.addEventListener("keydown",e=>{
+    if(e.key==="Enter") send();
+    socket.emit("typing");
+  });
+
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape") next();
+  });
+</script>
+
+</body>
+</html>
